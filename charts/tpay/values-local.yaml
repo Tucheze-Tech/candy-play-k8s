@@ -1,0 +1,48 @@
+replicaCount: 1
+
+image:
+  repository: tpay
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+autoscaling:
+  enabled: false
+
+serviceAccount:
+  name: tpay-ksa
+  gcpServiceAccount: ""
+
+env:
+  GOOGLE_CLOUD_PROJECT: ""
+  PORT: "8080"
+  TPAY_ENV: "local"
+  DATABASE_URL: "postgres://candy:candy@postgres:5432/tpay_local"
+
+# Tilt runs migrations separately.
+migrate:
+  enabled: false
+  command: ["python", "manage.py", "migrate", "--noinput"]
+
+cloudSqlProxy:
+  enabled: false
+
+externalSecret:
+  enabled: false
+
+networkPolicy:
+  enabled: false
+
+ingress:
+  enabled: false

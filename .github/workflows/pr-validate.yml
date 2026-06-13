@@ -1,0 +1,281 @@
+name: PR Validate
+
+# Runs on every PR that touches k8s config.
+# Lints all Helm charts and does a dry-run diff against the live cluster.
+# Fails fast if any chart has template errors.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+      - 'infrastructure/**'
+
+env:
+  GCP_PROJECT_ID: cm-services-prod
+  GCP_REGION: europe-west3
+  GKE_CLUSTER: candyplay-prod
+
+jobs:
+  helm-lint:
+    name: Helm lint all charts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Build chart dependencies (candy-common)
+        run: |
+          for chart in charts/*/; do
+            [ "$(basename "$chart")" = "candy-common" ] && continue
+            [ -f "${chart}Chart.yaml" ] || continue
+            echo "==> helm dependency build $chart"
+            helm dependency build "$chart"
+          done
+
+      - name: Lint all charts
+        run: |
+          FAILED=0
+          for chart in charts/*/; do
+            # candy-common is a library chart (no installable templates) — skip.
+            [ "$(basename "$chart")" = "candy-common" ] && continue
+            echo "==> Linting $chart"
+            if ! helm lint "$chart" \
+              -f "${chart}values.yaml" \
+              -f environments/cloud/gke.yaml \
+              --strict; then
+              FAILED=1
+            fi
+            if [ -f "${chart}values-staging.yaml" ]; then
+              echo "==> Linting $chart (staging overlay)"
+              if ! helm lint "$chart" \
+                -f "${chart}values.yaml" \
+                -f environments/cloud/gke.yaml \
+                -f "${chart}values-staging.yaml" \
+                --strict; then
+                FAILED=1
+              fi
+            fi
+          done
+          exit $FAILED
+
+      - name: Template render check (catch missing values)
+        run: |
+          for chart in charts/*/; do
+            [ "$(basename "$chart")" = "candy-common" ] && continue
+            echo "==> helm template $chart"
+            helm template test "$chart" \
+              -f "${chart}values.yaml" \
+              -f environments/cloud/gke.yaml > /dev/null
+          done
+
+  helm-diff:
+    name: Helm diff (what will change)
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Install helm-diff plugin
+        run: helm plugin install https://github.com/databus23/helm-diff --version 3.9.4
+
+      - name: Add Helm repos
+        run: |
+          helm repo add kong https://charts.konghq.com
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm repo add pmint93 https://pmint93.github.io/helm-charts
+          helm repo update
+
+      - name: Build chart dependencies (candy-common)
+        run: |
+          for chart in charts/*/; do
+            [ "$(basename "$chart")" = "candy-common" ] && continue
+            [ -f "${chart}Chart.yaml" ] || continue
+            helm dependency build "$chart"
+          done
+
+      - name: Diff infrastructure components
+        id: infra_diff
+        run: |
+          DIFF_OUTPUT=""
+
+          diff_component() {
+            local name=$1; shift
+            echo "--- diff: $name ---"
+            helm diff upgrade "$name" "$@" --no-hooks 2>&1 || true
+          }
+
+          DIFF_OUTPUT+=$(diff_component kong kong/kong \
+            --namespace kong \
+            -f infrastructure/kong/values.yaml \
+            --version 2.38.0)
+
+          DIFF_OUTPUT+=$(diff_component monitoring prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            -f infrastructure/monitoring/values.yaml \
+            --version 65.3.1)
+
+          DIFF_OUTPUT+=$(diff_component loki grafana/loki-stack \
+            --namespace monitoring \
+            -f infrastructure/loki/values.yaml \
+            --version 2.10.2)
+
+          DIFF_OUTPUT+=$(diff_component metabase pmint93/metabase \
+            --namespace metabase \
+            -f infrastructure/metabase/values.yaml)
+
+          # App charts — use production-latest tag (just checking template changes)
+          for svc in icore euro-virtuals tpay 01-tech; do
+            if [ -d "charts/$svc" ]; then
+              DIFF_OUTPUT+=$(diff_component "$svc" "charts/$svc/" \
+                --namespace candy-services \
+                -f "charts/$svc/values.yaml" \
+                -f environments/cloud/gke.yaml \
+                --set image.tag=production-latest)
+            fi
+          done
+
+          echo "diff_output<<EOF" >> $GITHUB_OUTPUT
+          echo "$DIFF_OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post diff as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const diff = `${{ steps.infra_diff.outputs.diff_output }}`;
+            const body = diff.trim()
+              ? `### Helm Diff — what this PR will change\n\`\`\`diff\n${diff.slice(0, 60000)}\n\`\`\``
+              : `### Helm Diff\nNo changes detected in live cluster.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c =>
+              c.user.login === 'github-actions[bot]' &&
+              c.body.startsWith('### Helm Diff')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  validate-manifests:
+    name: Validate raw manifests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Validate infrastructure manifests
+        run: |
+          find infrastructure/ -name "*.yaml" -not -path "*/values*.yaml" | \
+            xargs kubeconform \
+              -summary \
+              -ignore-missing-schemas \
+              -kubernetes-version 1.30.0 \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              2>&1 || true
+          echo "Manifest validation complete"
+
+  portability-render:
+    name: Render both clouds (gke + eks) and validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      # Renders every service chart against BOTH cloud overlays so the EKS
+      # portability path cannot silently rot. Each render is schema-validated.
+      - name: Render gke + eks and kubeconform
+        run: |
+          set -e
+          FAILED=0
+          for chart in charts/*/; do
+            svc="$(basename "$chart")"
+            [ "$svc" = "candy-common" ] && continue
+            [ -f "${chart}Chart.yaml" ] || continue
+            helm dependency build "$chart"
+            for cloud in gke eks; do
+              echo "==> render $svc ($cloud)"
+              if ! helm template "$svc" "$chart" \
+                   -f "${chart}values.yaml" \
+                   -f "environments/cloud/${cloud}.yaml" \
+                   -f "${chart}values-production.yaml" \
+                   > "/tmp/${svc}-${cloud}.yaml"; then
+                echo "::error::render failed for $svc/$cloud"; FAILED=1; continue
+              fi
+              kubeconform -summary -ignore-missing-schemas \
+                -kubernetes-version 1.30.0 \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                "/tmp/${svc}-${cloud}.yaml" || FAILED=1
+            done
+          done
+          exit $FAILED

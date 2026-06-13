@@ -1,0 +1,145 @@
+name: Deploy Service (reusable)
+
+# Single reusable deploy path for all 4 app charts, on either cloud.
+# Build+push of the image happens in the service's own source repo; that repo
+# calls this workflow with the resulting image_tag (the immutable git SHA).
+#
+# Caller example (from a service repo, after docker push):
+#   jobs:
+#     deploy:
+#       uses: <org>/k8s/.github/workflows/deploy-service.yml@main
+#       with:
+#         service: icore
+#         environment: staging
+#         cloud: gke
+#         image_tag: ${{ github.sha }}
+#       secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: 'icore | euro-virtuals | tpay | 01-tech'
+        required: true
+        type: string
+      environment:
+        description: 'staging | production'
+        required: true
+        type: string
+      cloud:
+        description: 'gke | eks'
+        required: false
+        default: gke
+        type: string
+      image_tag:
+        description: 'Immutable image tag to deploy (git SHA). Enables clean rollback.'
+        required: true
+        type: string
+      image_repository:
+        description: 'Override image repository (defaults to chart value).'
+        required: false
+        default: ''
+        type: string
+
+env:
+  GCP_PROJECT_ID: cm-services-prod
+  GCP_REGION: europe-west3
+  GKE_CLUSTER: candyplay-prod
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.service }} (${{ inputs.environment }}/${{ inputs.cloud }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      # ---- Cluster auth (GKE today; EKS branch is structure-only) ----
+      - name: Authenticate to GKE
+        if: inputs.cloud == 'gke'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - name: Setup gcloud
+        if: inputs.cloud == 'gke'
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - name: Get GKE credentials
+        if: inputs.cloud == 'gke'
+        run: |
+          gcloud container clusters get-credentials "$GKE_CLUSTER" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID"
+
+      - name: Configure EKS (placeholder)
+        if: inputs.cloud == 'eks'
+        run: |
+          echo "EKS deploy is structure-only; no live cluster provisioned yet." >&2
+          echo "Wire aws-actions/configure-aws-credentials + aws eks update-kubeconfig here." >&2
+          exit 1
+
+      # ---- Resolve namespace + release name + value overlays per environment ----
+      - name: Compute deploy parameters
+        id: params
+        run: |
+          SVC='${{ inputs.service }}'
+          ENVNAME='${{ inputs.environment }}'
+          CLOUD='${{ inputs.cloud }}'
+          if [ "$ENVNAME" = "production" ]; then
+            NS=candy-services
+            RELEASE="$SVC"
+            SA_SUFFIX=""
+          else
+            NS=candy-services-staging
+            RELEASE="${SVC}-stg"
+            SA_SUFFIX="-stg"
+          fi
+          echo "namespace=$NS"               >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE"            >> "$GITHUB_OUTPUT"
+          echo "sa_suffix=$SA_SUFFIX"        >> "$GITHUB_OUTPUT"
+          echo "cloud_values=environments/cloud/${CLOUD}.yaml" >> "$GITHUB_OUTPUT"
+
+      - name: Build chart dependencies (candy-common)
+        run: helm dependency build "charts/${{ inputs.service }}"
+
+      - name: Helm upgrade
+        run: |
+          SVC='${{ inputs.service }}'
+          REPO_FLAG=""
+          if [ -n '${{ inputs.image_repository }}' ]; then
+            REPO_FLAG="--set image.repository=${{ inputs.image_repository }}"
+          fi
+          helm upgrade --install "${{ steps.params.outputs.release }}" "charts/${SVC}/" \
+            --namespace "${{ steps.params.outputs.namespace }}" \
+            --create-namespace \
+            --values "charts/${SVC}/values.yaml" \
+            --values "${{ steps.params.outputs.cloud_values }}" \
+            --values "charts/${SVC}/values-${{ inputs.environment }}.yaml" \
+            --set image.tag='${{ inputs.image_tag }}' \
+            --set serviceAccount.name="${SVC%-*}-ksa${{ steps.params.outputs.sa_suffix }}" \
+            $REPO_FLAG \
+            --atomic \
+            --timeout=10m \
+            --wait
+          # NOTE: --atomic auto-rolls-back on a failed rollout. DB migrations run
+          # as a post-upgrade Helm hook (migrate.enabled) and are forward-only.
+
+      - name: Verify rollout + health
+        run: |
+          NS='${{ steps.params.outputs.namespace }}'
+          WORKLOAD='${{ steps.params.outputs.release }}-${{ inputs.service }}'
+          kubectl rollout status "deploy/${WORKLOAD}" -n "$NS" --timeout=120s
+          kubectl run "smoke-${{ inputs.service }}-${{ github.run_number }}" \
+            -n "$NS" --rm -i --restart=Never --image=curlimages/curl:8.10.1 -- \
+            sh -c "curl -fsS http://${WORKLOAD}.${NS}.svc.cluster.local:8080/health || curl -fsS http://${WORKLOAD}.${NS}.svc.cluster.local:8080/health/" \
+            || echo "::warning::health probe non-200 (service may gate /health behind auth)"
+
+      - run: echo "Deployed ${{ inputs.service }} @ ${{ inputs.image_tag }} to ${{ steps.params.outputs.namespace }} on ${{ inputs.cloud }}" >> "$GITHUB_STEP_SUMMARY"

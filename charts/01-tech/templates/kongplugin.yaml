@@ -1,0 +1,34 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: 01tech-key-auth
+  namespace: {{ .Values.cloud.namespace }}
+plugin: key-auth
+config:
+  key_names:
+    - X-API-KEY
+  hide_credentials: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: 01tech-rate-limit
+  namespace: {{ .Values.cloud.namespace }}
+plugin: rate-limiting
+config:
+  minute: 300
+  hour: 10000
+  policy: local
+  fault_tolerant: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: 01tech-ip-restrict
+  namespace: {{ .Values.cloud.namespace }}
+plugin: ip-restriction
+config:
+  allow:
+    {{- range .Values.callbackIngress.allowedCidrs }}
+    - {{ . }}
+    {{- end }}

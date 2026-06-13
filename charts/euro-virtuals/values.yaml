@@ -1,0 +1,94 @@
+replicaCount: 2
+
+image:
+  repository: europe-west3-docker.pkg.dev/cm-services-prod/cloud-run-source-deploy/euro-virtuals
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+serviceAccount:
+  name: ev-ksa
+  gcpServiceAccount: "ev-sa@cm-services-prod.iam.gserviceaccount.com"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "cm-services-prod"
+  PORT: "8080"
+
+probes:
+  liveness:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 20
+    periodSeconds: 15
+    failureThreshold: 3
+  readiness:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+# euro-virtuals runs Alembic migrations as a CI Job, not a Helm hook.
+migrate:
+  enabled: false
+  command: ["alembic", "upgrade", "head"]
+
+cloudSqlProxy:
+  enabled: true
+  connectionName: "cm-services-prod:europe-west3:candyplay-prod-pg"
+  image: "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+
+externalSecret:
+  enabled: true
+  targetName: "ev-env-secret"
+  refreshInterval: "1h"
+  gcpSecretName: "ev_prd_settings"
+
+networkPolicy:
+  enabled: true
+
+ingress:
+  enabled: true
+  host: api.candyplay.com
+  pathPrefix: "/ev"
+  tlsSecret: candyplay-tls
+  kongPlugins: "ev-key-auth,ev-rate-limit"
+
+cloud:
+  provider: gke
+  namespace: candy-services
+  serviceAccount:
+    annotationKey: "iam.gke.io/gcp-service-account"
+  secretStore:
+    kind: ClusterSecretStore
+    name: gcp-secret-store
+  spot:
+    nodeSelector: {}
+    tolerations: []
+  db:
+    mode: cloudsql-proxy

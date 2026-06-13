@@ -1,0 +1,11 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: candyplay-local
+nodes:
+  - role: control-plane
+    # Map host ports so Tilt port-forwards (and an optional local Kong) are
+    # reachable. Tilt itself also sets up per-service forwards; these are spare.
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP

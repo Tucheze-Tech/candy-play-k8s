@@ -1,0 +1,169 @@
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    retentionSize: "4GB"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: standard-rwo
+          resources:
+            requests:
+              storage: 10Gi
+    podMonitorNamespaceSelector:
+      matchLabels:
+        monitoring: "true"
+    serviceMonitorNamespaceSelector:
+      matchLabels:
+        monitoring: "true"
+    nodeSelector:
+      cloud.google.com/gke-spot: "true"
+    tolerations:
+      - key: "cloud.google.com/gke-spot"
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+
+grafana:
+  enabled: true
+
+  # -------------------------------------------------------
+  # Grafana root URL — must match the Kong strip-path route
+  # Access: https://api.candyplay.com/grafana
+  # -------------------------------------------------------
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/grafana"
+      serve_from_sub_path: true
+    security:
+      allow_embedding: true    # needed for iframe embedding if used in metabase
+
+  # -------------------------------------------------------
+  # Auto-configured datasources — no manual wiring needed
+  # -------------------------------------------------------
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki.monitoring:3100
+      access: proxy
+      isDefault: false
+      jsonData:
+        maxLines: 5000
+        derivedFields:
+          # Link log lines that contain a traceId to Grafana Tempo (if added later)
+          - name: TraceID
+            matcherRegex: '"trace_id":"(\w+)"'
+            url: ""
+
+  # -------------------------------------------------------
+  # Pre-load dashboards from grafana.com on startup
+  # -------------------------------------------------------
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: CandyPlay
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  dashboards:
+    default:
+      # Kong traffic dashboard
+      kong-official:
+        gnetId: 7424
+        revision: 6
+        datasource: Prometheus
+      # Kubernetes pod resources
+      k8s-pods:
+        gnetId: 6781
+        revision: 1
+        datasource: Prometheus
+      # Loki logs dashboard
+      loki-logs:
+        gnetId: 12611
+        revision: 1
+        datasource: Loki
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  persistence:
+    enabled: true
+    storageClassName: standard-rwo
+    size: 2Gi
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: true
+    ingressClassName: kong
+    annotations:
+      konghq.com/strip-path: "true"
+    hosts:
+      - api.candyplay.com
+    path: /grafana
+    tls:
+      - secretName: candyplay-tls
+        hosts:
+          - api.candyplay.com
+  nodeSelector:
+    cloud.google.com/gke-spot: "true"
+  tolerations:
+    - key: "cloud.google.com/gke-spot"
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+
+alertmanager:
+  enabled: false
+
+nodeExporter:
+  enabled: false
+
+kubeStateMetrics:
+  enabled: true
+
+defaultRules:
+  create: true
+  rules:
+    alertmanager: false
+    etcd: false
+    configReloaders: false
+    general: true
+    k8s: true
+    kubeApiserverAvailability: false
+    kubeApiserverBurnrate: false
+    kubeApiserverHistogram: false
+    kubeApiserverSlis: false
+    kubeControllerManager: false
+    kubelet: true
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeStateMetrics: true
+    network: true
+    node: false
+    nodeExporterAlerting: false
+    nodeExporterRecording: false
+    prometheus: true
+    prometheusOperator: false

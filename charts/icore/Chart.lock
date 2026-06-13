@@ -1,0 +1,6 @@
+dependencies:
+- name: candy-common
+  repository: file://../candy-common
+  version: 0.1.0
+digest: sha256:a465a320b5b275fdb4565610301aa725bd135178162516bb7a68aa0a991d0715
+generated: "2026-06-13T13:44:10.7514+03:00"

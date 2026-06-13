@@ -1,0 +1,5 @@
+# Example vars for a future EKS deploy. Same shape as gke-prod.
+cluster_name = "candyplay-prod"
+region       = "eu-west-1"
+node_spot    = true
+enable_oidc  = true

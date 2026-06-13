@@ -1,0 +1,22 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="fastapi" />
+          <option value="python-telegram-bot" />
+          <option value="uvicorn" />
+          <option value="apscheduler" />
+          <option value="httpx" />
+          <option value="pydantic" />
+          <option value="python-dotenv" />
+          <option value="asyncpg" />
+          <option value="greenlet" />
+          <option value="typing-inspection" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="SqlNoDataSourceInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+  </profile>
+</component>

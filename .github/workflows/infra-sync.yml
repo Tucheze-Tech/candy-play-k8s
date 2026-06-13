@@ -1,0 +1,582 @@
+name: K8s Infrastructure Sync
+
+# Runs on push to main when infrastructure values or chart templates change.
+# Each job is gated by which path changed — only affected components upgrade.
+# App chart changes (charts/) also trigger a helm upgrade for that service.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infrastructure/**'
+      - 'charts/**'
+      - '.github/workflows/infra-sync.yml'
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Force-upgrade a specific component (kong|monitoring|loki|metabase|cert-manager|external-secrets|icore|euro-virtuals|tpay|01-tech|all)'
+        required: false
+        default: ''
+
+env:
+  GCP_PROJECT_ID: cm-services-prod
+  GCP_REGION: europe-west3
+  GKE_CLUSTER: candyplay-prod
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Detect which paths changed
+  # ──────────────────────────────────────────────
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      kong: ${{ steps.filter.outputs.kong }}
+      monitoring: ${{ steps.filter.outputs.monitoring }}
+      loki: ${{ steps.filter.outputs.loki }}
+      metabase: ${{ steps.filter.outputs.metabase }}
+      cert-manager: ${{ steps.filter.outputs.cert-manager }}
+      external-secrets: ${{ steps.filter.outputs.external-secrets }}
+      icore: ${{ steps.filter.outputs.icore }}
+      euro-virtuals: ${{ steps.filter.outputs.euro-virtuals }}
+      tpay: ${{ steps.filter.outputs.tpay }}
+      tech: ${{ steps.filter.outputs.tech }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            kong:
+              - 'infrastructure/kong/**'
+            monitoring:
+              - 'infrastructure/monitoring/**'
+            loki:
+              - 'infrastructure/loki/**'
+            metabase:
+              - 'infrastructure/metabase/**'
+            cert-manager:
+              - 'infrastructure/cert-manager/**'
+            external-secrets:
+              - 'infrastructure/external-secrets/**'
+            icore:
+              - 'charts/icore/**'
+            euro-virtuals:
+              - 'charts/euro-virtuals/**'
+            tpay:
+              - 'charts/tpay/**'
+            tech:
+              - 'charts/01-tech/**'
+
+  # ──────────────────────────────────────────────
+  # Shared GKE auth step (reused by all jobs via needs)
+  # Each job re-authenticates independently (GH doesn't share creds across jobs)
+  # ──────────────────────────────────────────────
+
+  kong:
+    name: Upgrade Kong
+    needs: changes
+    if: |
+      needs.changes.outputs.kong == 'true' ||
+      github.event.inputs.component == 'kong' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Helm repo add
+        run: |
+          helm repo add kong https://charts.konghq.com
+          helm repo update
+      - name: Upgrade Kong
+        run: |
+          helm upgrade --install kong kong/kong \
+            --namespace kong \
+            --create-namespace \
+            -f infrastructure/kong/values.yaml \
+            --version 2.38.0 \
+            --atomic \
+            --timeout=10m \
+            --wait
+      - name: Apply Kong manifests
+        run: |
+          # Apply any standalone manifests (consumers, staging-plugins, etc.)
+          kubectl apply -f infrastructure/kong/db-externalsecret.yaml
+          if [ -f infrastructure/kong/staging-plugins.yaml ]; then
+            kubectl apply -f infrastructure/kong/staging-plugins.yaml
+          fi
+      - run: echo "Kong upgraded successfully" >> $GITHUB_STEP_SUMMARY
+
+  monitoring:
+    name: Upgrade Prometheus + Grafana
+    needs: changes
+    if: |
+      needs.changes.outputs.monitoring == 'true' ||
+      github.event.inputs.component == 'monitoring' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Helm repo add
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+      - name: Upgrade kube-prometheus-stack
+        run: |
+          kubectl label namespace monitoring monitoring=true --overwrite || true
+          helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --create-namespace \
+            -f infrastructure/monitoring/values.yaml \
+            --version 65.3.1 \
+            --atomic \
+            --timeout=15m \
+            --wait
+      - run: echo "Monitoring upgraded — Grafana at https://api.candyplay.com/grafana" >> $GITHUB_STEP_SUMMARY
+
+  loki:
+    name: Upgrade Loki + Promtail
+    needs: changes
+    if: |
+      needs.changes.outputs.loki == 'true' ||
+      github.event.inputs.component == 'loki' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Helm repo add
+        run: |
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+      - name: Upgrade Loki stack
+        run: |
+          helm upgrade --install loki grafana/loki-stack \
+            --namespace monitoring \
+            -f infrastructure/loki/values.yaml \
+            --version 2.10.2 \
+            --atomic \
+            --timeout=10m \
+            --wait
+      - run: echo "Loki + Promtail upgraded" >> $GITHUB_STEP_SUMMARY
+
+  metabase:
+    name: Upgrade Metabase
+    needs: changes
+    if: |
+      needs.changes.outputs.metabase == 'true' ||
+      github.event.inputs.component == 'metabase' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Helm repo add
+        run: |
+          helm repo add pmint93 https://pmint93.github.io/helm-charts
+          helm repo update
+      - name: Upgrade Metabase
+        run: |
+          helm upgrade --install metabase pmint93/metabase \
+            --namespace metabase \
+            --create-namespace \
+            -f infrastructure/metabase/values.yaml \
+            --atomic \
+            --timeout=10m \
+            --wait
+      - run: echo "Metabase upgraded — https://api.candyplay.com/metabase" >> $GITHUB_STEP_SUMMARY
+
+  cert-manager:
+    name: Upgrade cert-manager
+    needs: changes
+    if: |
+      needs.changes.outputs.cert-manager == 'true' ||
+      github.event.inputs.component == 'cert-manager' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Helm repo add
+        run: |
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+      - name: Upgrade cert-manager
+        run: |
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --create-namespace \
+            --set installCRDs=true \
+            --version v1.16.3 \
+            --atomic \
+            --timeout=10m \
+            --wait
+      - name: Apply ClusterIssuers
+        run: |
+          kubectl apply -f infrastructure/cert-manager/clusterissuer.yaml
+          if [ -f infrastructure/cert-manager/clusterissuer-staging.yaml ]; then
+            kubectl apply -f infrastructure/cert-manager/clusterissuer-staging.yaml
+          fi
+
+  external-secrets:
+    name: Upgrade External Secrets Operator
+    needs: changes
+    if: |
+      needs.changes.outputs.external-secrets == 'true' ||
+      github.event.inputs.component == 'external-secrets' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Helm repo add
+        run: |
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm repo update
+      - name: Upgrade ESO
+        run: |
+          helm upgrade --install external-secrets external-secrets/external-secrets \
+            --namespace external-secrets \
+            --create-namespace \
+            --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="external-secrets-sa@cm-services-prod.iam.gserviceaccount.com" \
+            --version 0.10.5 \
+            --atomic \
+            --timeout=10m \
+            --wait
+      - name: Apply ClusterSecretStore
+        run: kubectl apply -f infrastructure/external-secrets/clustersecretstore.yaml
+
+  # ──────────────────────────────────────────────
+  # App chart upgrades (chart template/values changes only — no image rebuild)
+  # Image is already in the cluster from the service repo's own deploy workflow.
+  # This only re-applies chart structural changes.
+  # ──────────────────────────────────────────────
+
+  icore-chart:
+    name: Upgrade icore chart
+    needs: changes
+    if: |
+      needs.changes.outputs.icore == 'true' ||
+      github.event.inputs.component == 'icore' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Upgrade icore (prod)
+        run: |
+          # Reuse current running image — don't force a new image tag
+          CURRENT_TAG=$(kubectl get deployment icore-icore -n candy-services \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' \
+            | cut -d: -f2 || echo "production-latest")
+
+          helm dependency build charts/icore
+
+          helm upgrade --install icore charts/icore/ \
+            --namespace candy-services \
+            --create-namespace \
+            --values charts/icore/values.yaml \
+            --values environments/cloud/gke.yaml \
+            --values charts/icore/values-production.yaml \
+            --set image.tag="${CURRENT_TAG}" \
+            --atomic \
+            --timeout=10m \
+            --wait
+      - name: Upgrade icore (staging)
+        run: |
+          CURRENT_TAG=$(kubectl get deployment icore-stg-icore -n candy-services-staging \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' \
+            | cut -d: -f2 2>/dev/null || echo "staging-latest")
+
+          helm dependency build charts/icore
+
+          helm upgrade --install icore-stg charts/icore/ \
+            --namespace candy-services-staging \
+            --create-namespace \
+            --values charts/icore/values.yaml \
+            --values environments/cloud/gke.yaml \
+            --values charts/icore/values-staging.yaml \
+            --set image.tag="${CURRENT_TAG}" \
+            --set serviceAccount.name=icore-ksa-stg \
+            --atomic \
+            --timeout=10m \
+            --wait
+
+  euro-virtuals-chart:
+    name: Upgrade euro-virtuals chart
+    needs: changes
+    if: |
+      needs.changes.outputs.euro-virtuals == 'true' ||
+      github.event.inputs.component == 'euro-virtuals' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Upgrade euro-virtuals (prod)
+        run: |
+          CURRENT_TAG=$(kubectl get deployment euro-virtuals-euro-virtuals -n candy-services \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' \
+            | cut -d: -f2 || echo "production-latest")
+
+          helm dependency build charts/euro-virtuals
+
+          helm upgrade --install euro-virtuals charts/euro-virtuals/ \
+            --namespace candy-services \
+            --create-namespace \
+            --values charts/euro-virtuals/values.yaml \
+            --values environments/cloud/gke.yaml \
+            --values charts/euro-virtuals/values-production.yaml \
+            --set image.tag="${CURRENT_TAG}" \
+            --atomic \
+            --timeout=10m \
+            --wait
+      - name: Upgrade euro-virtuals (staging)
+        run: |
+          CURRENT_TAG=$(kubectl get deployment euro-virtuals-stg-euro-virtuals -n candy-services-staging \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' \
+            | cut -d: -f2 2>/dev/null || echo "staging-latest")
+
+          helm dependency build charts/euro-virtuals
+
+          helm upgrade --install euro-virtuals-stg charts/euro-virtuals/ \
+            --namespace candy-services-staging \
+            --create-namespace \
+            --values charts/euro-virtuals/values.yaml \
+            --values environments/cloud/gke.yaml \
+            --values charts/euro-virtuals/values-staging.yaml \
+            --set image.tag="${CURRENT_TAG}" \
+            --set serviceAccount.name=ev-ksa-stg \
+            --atomic \
+            --timeout=10m \
+            --wait
+
+  tpay-chart:
+    name: Upgrade tpay chart
+    needs: changes
+    if: |
+      needs.changes.outputs.tpay == 'true' ||
+      github.event.inputs.component == 'tpay' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Upgrade tpay (prod)
+        run: |
+          CURRENT_TAG=$(kubectl get deployment tpay-tpay -n candy-services \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' \
+            | cut -d: -f2 || echo "production-latest")
+
+          helm dependency build charts/tpay
+
+          helm upgrade --install tpay charts/tpay/ \
+            --namespace candy-services \
+            --create-namespace \
+            --values charts/tpay/values.yaml \
+            --values environments/cloud/gke.yaml \
+            --values charts/tpay/values-production.yaml \
+            --atomic \
+            --timeout=10m \
+            --wait
+
+  tech-chart:
+    name: Upgrade 01-tech chart
+    needs: changes
+    if: |
+      needs.changes.outputs.tech == 'true' ||
+      github.event.inputs.component == '01-tech' ||
+      github.event.inputs.component == 'all'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Upgrade 01-tech (prod)
+        run: |
+          CURRENT_TAG=$(kubectl get deployment 01-tech-01-tech -n candy-services \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' \
+            | cut -d: -f2 || echo "production-latest")
+
+          helm dependency build charts/01-tech
+
+          helm upgrade --install 01-tech charts/01-tech/ \
+            --namespace candy-services \
+            --create-namespace \
+            --values charts/01-tech/values.yaml \
+            --values environments/cloud/gke.yaml \
+            --values charts/01-tech/values-production.yaml \
+            --atomic \
+            --timeout=10m \
+            --wait

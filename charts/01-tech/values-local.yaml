@@ -1,0 +1,49 @@
+replicaCount: 1
+
+image:
+  repository: 01-tech
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    cpu: "300m"
+    memory: "256Mi"
+
+autoscaling:
+  enabled: false
+
+serviceAccount:
+  name: 01tech-ksa
+  gcpServiceAccount: ""
+
+# 01-tech (Go) reads DATABASE_URL + ICORE_URL (in-cluster service DNS).
+env:
+  GOOGLE_CLOUD_PROJECT: ""
+  PORT: "8080"
+  DATABASE_URL: "postgres://candy:candy@postgres:5432/tech_local"
+  ICORE_URL: "http://icore-icore:8080"
+
+migrate:
+  enabled: false
+
+cloudSqlProxy:
+  enabled: false
+
+externalSecret:
+  enabled: false
+
+networkPolicy:
+  enabled: false
+
+ingress:
+  enabled: false
+callbackIngress:
+  enabled: false

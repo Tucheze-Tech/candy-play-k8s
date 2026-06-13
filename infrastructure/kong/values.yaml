@@ -1,0 +1,97 @@
+# Kong Gateway — PostgreSQL-backed (DB mode)
+# Enables full Admin API, persistent config, and Kong Manager.
+
+ingressController:
+  enabled: true
+  installCRDs: false
+
+proxy:
+  type: LoadBalancer
+  annotations:
+    cloud.google.com/load-balancer-type: "External"
+  tls:
+    enabled: true
+
+# ---------------------------------------------------------
+# Kong DB — PostgreSQL via Cloud SQL Auth Proxy sidecar
+# Database: kong_prod on candyplay-prod-pg
+# ---------------------------------------------------------
+env:
+  database: "postgres"
+  pg_host: "127.0.0.1"        # cloud-sql-proxy sidecar
+  pg_port: "5432"
+  pg_database: "kong_prod"
+  pg_user: "kong_user"
+  pg_password:
+    valueFrom:
+      secretKeyRef:
+        name: kong-db-secret
+        key: password
+
+  log_level: "notice"
+  plugins: "bundled"
+
+  # Admin API — listen on all interfaces inside the pod
+  admin_listen: "0.0.0.0:8001"
+
+  # Enable Kong Manager UI (requires Kong Gateway; OSS gets Admin API only)
+  admin_gui_listen: "0.0.0.0:8002"
+
+# ---------------------------------------------------------
+# Admin API Service (ClusterIP — internal only)
+# Access via: kubectl port-forward -n kong svc/kong-kong-admin 8001:8001
+# Then: http://localhost:8001
+# ---------------------------------------------------------
+admin:
+  enabled: true
+  type: ClusterIP
+  http:
+    enabled: true
+    servicePort: 8001
+    containerPort: 8001
+  tls:
+    enabled: false
+
+# ---------------------------------------------------------
+# Run DB migrations on install/upgrade
+# ---------------------------------------------------------
+migrations:
+  preUpgrade: true
+  postUpgrade: true
+
+# ---------------------------------------------------------
+# Cloud SQL Auth Proxy sidecar — connects Kong to kong_prod DB
+# ---------------------------------------------------------
+deployment:
+  sidecarContainers:
+    - name: cloud-sql-proxy
+      image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+      args:
+        - "--structured-logs"
+        - "--port=5432"
+        - "--private-ip"
+        - "cm-services-prod:europe-west3:candyplay-prod-pg"
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "512Mi"
+
+replicaCount: 2
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

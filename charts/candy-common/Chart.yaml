@@ -1,0 +1,10 @@
+apiVersion: v2
+name: candy-common
+description: >-
+  Shared Helm library chart for CandyPlay services. Holds the templated
+  Deployment, Service, Ingress, HPA, ServiceAccount, NetworkPolicy,
+  ExternalSecret and migration Job so each service chart is values-only.
+  Cloud-specific behaviour (GKE Autopilot vs EKS) is driven entirely by the
+  `.Values.cloud.*` block, so the same charts deploy to either cloud.
+type: library
+version: 0.1.0

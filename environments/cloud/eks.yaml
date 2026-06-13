@@ -1,0 +1,32 @@
+# Shared EKS cloud overlay — the AWS arm of the portability seam.
+# SKELETON: not yet applied to a live cluster (no EKS provisioned). Renders
+# valid manifests so `helm template`/kubeconform can prove portability in CI.
+#
+# Per-service EKS deploys must additionally override the workload identity
+# value with the service's IAM role ARN:
+#   --set serviceAccount.gcpServiceAccount=arn:aws:iam::<acct>:role/<svc>-irsa
+# (field name kept as gcpServiceAccount to avoid churning CI --set flags; it
+# simply holds the role ARN on EKS.)
+cloud:
+  provider: eks
+  namespace: candy-services
+  serviceAccount:
+    annotationKey: "eks.amazonaws.com/role-arn"
+  secretStore:
+    kind: ClusterSecretStore
+    name: aws-secret-store
+  spot:
+    nodeSelector:
+      karpenter.sh/capacity-type: spot
+    tolerations: []
+  db:
+    # No cloud-sql-proxy sidecar on EKS; the DB endpoint (RDS) is delivered
+    # through the service Secret consumed via envFrom.
+    mode: direct
+
+# Disable the GCP Cloud SQL Auth Proxy sidecar on AWS.
+cloudSqlProxy:
+  enabled: false
+
+# EBS gp3 for any PersistentVolumeClaims (was standard-rwo on GKE).
+storageClass: gp3

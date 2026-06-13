@@ -1,0 +1,50 @@
+replicaCount: 1
+
+image:
+  repository: euro-virtuals
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+autoscaling:
+  enabled: false
+
+serviceAccount:
+  name: ev-ksa
+  gcpServiceAccount: ""
+
+# euro-virtuals reads discrete POSTGRES_* vars (SQLAlchemy) + GCP project.
+env:
+  GOOGLE_CLOUD_PROJECT: ""
+  PORT: "8080"
+  POSTGRES_SERVER: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: "candy"
+  POSTGRES_PASSWORD: "candy"
+  POSTGRES_DB: "ev_local"
+
+migrate:
+  enabled: false
+
+cloudSqlProxy:
+  enabled: false
+
+externalSecret:
+  enabled: false
+
+networkPolicy:
+  enabled: false
+
+ingress:
+  enabled: false

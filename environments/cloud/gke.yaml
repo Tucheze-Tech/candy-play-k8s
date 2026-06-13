@@ -1,0 +1,21 @@
+# Shared GKE cloud overlay — applied to every service chart on GKE Autopilot.
+#   helm upgrade ... -f charts/<svc>/values.yaml -f environments/cloud/gke.yaml -f charts/<svc>/values-<env>.yaml
+# This is the authoritative echo of the GKE seam; base chart values already
+# default to these, so appending it is a no-op behaviourally (kept explicit so
+# the gke↔eks contrast is one diff away).
+cloud:
+  provider: gke
+  namespace: candy-services
+  serviceAccount:
+    annotationKey: "iam.gke.io/gcp-service-account"
+  secretStore:
+    kind: ClusterSecretStore
+    name: gcp-secret-store
+  spot:
+    nodeSelector: {}
+    tolerations: []
+  db:
+    mode: cloudsql-proxy
+
+cloudSqlProxy:
+  enabled: true

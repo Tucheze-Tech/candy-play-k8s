@@ -1,0 +1,56 @@
+replicaCount: 1
+
+image:
+  repository: icore
+  tag: "local"
+  pullPolicy: IfNotPresent   # Tilt injects the freshly built image ref
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+autoscaling:
+  enabled: false
+
+serviceAccount:
+  name: icore-ksa
+  gcpServiceAccount: ""  # no workload identity locally -> annotation omitted
+
+# Secrets injected inline locally (ESO disabled). Points at the in-cluster
+# Postgres/Redis deployed by k8s/local/dependencies.yaml — no host.docker.internal.
+env:
+  SETTINGS_NAME: ""
+  GOOGLE_CLOUD_PROJECT: ""
+  USE_CLOUD_SQL_AUTH_PROXY: "false"
+  PORT: "8080"
+  DATABASE_URL: "postgresql://candy:candy@postgres:5432/gonga_local"
+  REDIS_HOST: "redis"
+  REDIS_PASSWORD: "localredis"
+  SECRET_KEY: "local-dev-secret-key-not-for-production"
+  TRAMPOLINE_CI: "1"
+
+# Tilt runs migrations as its own resource; don't run them as a Helm hook.
+migrate:
+  enabled: false
+  command: ["python", "manage.py", "migrate", "--noinput"]
+
+cloudSqlProxy:
+  enabled: false
+
+externalSecret:
+  enabled: false
+
+networkPolicy:
+  enabled: false
+
+# No Kong locally — Tilt port-forwards the Service directly.
+ingress:
+  enabled: false

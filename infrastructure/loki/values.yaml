@@ -1,0 +1,81 @@
+# Loki Stack — Loki (log store) + Promtail (log collector DaemonSet)
+# Promtail runs on every node, collects all pod stdout/stderr, ships to Loki.
+# Grafana reads from Loki at http://loki.monitoring:3100
+
+loki:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClassName: standard-rwo
+    size: 10Gi
+  config:
+    # Keep 7 days of logs (matches Prometheus retention)
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: 168h
+    limits_config:
+      retention_period: 168h
+      ingestion_rate_mb: 4
+      ingestion_burst_size_mb: 8
+      max_streams_per_user: 5000
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  nodeSelector:
+    cloud.google.com/gke-spot: "true"
+  tolerations:
+    - key: "cloud.google.com/gke-spot"
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+
+promtail:
+  enabled: true
+  config:
+    logLevel: info
+    serverPort: 3101
+    clients:
+      - url: http://loki.monitoring:3100/loki/api/v1/push
+
+  # Pipeline stages — parse JSON logs and add useful labels
+  pipelineStages:
+    - cri: {}           # parse CRI-O / containerd log format used by GKE
+    - json:             # if log line is JSON, extract fields
+        expressions:
+          level: level
+          severity: severity
+          logger: logger
+    - labels:
+        level:
+        severity:
+
+  # Extra labels added to every log stream from this cluster
+  extraScrapeConfigs: |
+    - job_name: kubernetes-pods
+      kubernetes_sd_configs:
+        - role: pod
+      relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace]
+          target_label: namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          target_label: pod
+        - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          target_label: app
+        - source_labels: [__meta_kubernetes_container_name]
+          target_label: container
+        # Drop promtail's own logs to avoid recursion
+        - source_labels: [__meta_kubernetes_pod_label_app]
+          regex: promtail
+          action: drop
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"

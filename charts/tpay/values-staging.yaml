@@ -1,0 +1,29 @@
+replicaCount: 1
+
+image:
+  tag: "staging-latest"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "cm-services-prod"
+  PORT: "8080"
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 2
+
+externalSecret:
+  gcpSecretName: "tpay_stg_settings"
+
+ingress:
+  host: api-dev.candyplay.com
+  pathPrefix: "/tpay"
+  tlsSecret: candyplay-dev-tls
+  kongPlugins: "tpay-key-auth-stg,tpay-rate-limit-stg"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"

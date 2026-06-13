@@ -1,0 +1,13 @@
+# SKELETON — rename to main.tf and fill backend/credentials only when actually
+# standing up EKS. Provisioning AWS is out of current scope.
+module "cluster" {
+  source       = "../../modules/eks"
+  cluster_name = "candyplay-prod"
+  region       = "eu-west-1"
+  node_spot    = true
+  enable_oidc  = true
+}
+
+output "cluster_name" {
+  value = module.cluster.cluster_name
+}
