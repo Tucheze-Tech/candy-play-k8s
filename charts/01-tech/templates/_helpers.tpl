@@ -1,5 +1,5 @@
 {{- define "01-tech.fullname" -}}
-{{- printf "%s-%s" .Release.Name .Chart.Name | trunc 63 | trimSuffix "-" }}
+{{- "tech01" }}
 {{- end }}
 
 {{- define "01-tech.labels" -}}
