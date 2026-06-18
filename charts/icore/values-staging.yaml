@@ -1,11 +1,20 @@
 replicaCount: 1
 
+# Staging lives in its own namespace + KSA inside the same GKE cluster.
+# Templates pin metadata.namespace to cloud.namespace, and WI binds
+# candy-services-staging/<svc>-ksa-stg, so both must be overridden here.
+cloud:
+  namespace: candy-services-staging
+
+serviceAccount:
+  name: icore-ksa-stg
+
 image:
   tag: "staging-latest"
 
 env:
   SETTINGS_NAME: "gonga_stg_settings"
-  GOOGLE_CLOUD_PROJECT: "cm-services-prod"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
   USE_CLOUD_SQL_AUTH_PROXY: "true"
   PORT: "8080"
 
@@ -17,10 +26,30 @@ externalSecret:
   gcpSecretName: "gonga_stg_settings"
 
 ingress:
-  host: api-dev.candyplay.com
+  host: api-dev.candyplay.co.ke
   pathPrefix: "/icore"
   tlsSecret: candyplay-dev-tls
   kongPlugins: "icore-key-auth-stg,icore-rate-limit-stg"
+
+# Staging Kong objects: -stg names (global identities must not collide with
+# prod) and relaxed limits. Lists replace wholesale, so the full set is here.
+kong:
+  plugins:
+    - name: icore-key-auth-stg
+      type: key-auth
+      config:
+        key_names: ["X-API-KEY"]
+        hide_credentials: true
+    - name: icore-rate-limit-stg
+      type: rate-limiting
+      config:
+        minute: 300
+        policy: local
+        fault_tolerant: true
+  consumer:
+    name: icore-internal-stg
+    credentialSecret: icore-apikey-credential-stg
+    apiKey: ""
 
 resources:
   requests:

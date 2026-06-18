@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: europe-west3-docker.pkg.dev/cm-services-prod/cloud-run-source-deploy/tpay
+  repository: europe-west3-docker.pkg.dev/candy-play/cloud-run-source-deploy/tpay
   tag: "latest"
   pullPolicy: IfNotPresent
 
@@ -25,11 +25,15 @@ autoscaling:
 
 serviceAccount:
   name: tpay-ksa
-  gcpServiceAccount: "tpay-sa@cm-services-prod.iam.gserviceaccount.com"
+  gcpServiceAccount: "tpay-sa@candy-play.iam.gserviceaccount.com"
 
 env:
-  GOOGLE_CLOUD_PROJECT: "cm-services-prod"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
   PORT: "8080"
+  # tpay's entrypoint runs `uv run` at startup; under runAsUser:1000 the default
+  # cache (/.cache/uv) and HOME (/) aren't writable -> point them at /tmp.
+  HOME: "/tmp"
+  UV_CACHE_DIR: "/tmp/uv-cache"
 
 probes:
   liveness:
@@ -52,7 +56,7 @@ migrate:
 
 cloudSqlProxy:
   enabled: true
-  connectionName: "cm-services-prod:europe-west3:candyplay-prod-pg"
+  connectionName: "candy-play:europe-west3:candyplay-prod-pg"
   image: "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0"
   resources:
     requests:
@@ -74,10 +78,27 @@ networkPolicy:
 
 ingress:
   enabled: true
-  host: api.candyplay.com
+  host: api.candyplay.co.ke
   pathPrefix: "/tpay"
   tlsSecret: candyplay-tls
-  kongPlugins: "tpay-key-auth,tpay-rate-limit"
+  kongPlugins: "tpay-key-auth,tpay-rate-limit"   # must match kong.plugins[].name below
+
+# Kong objects (single source of truth — rendered by candy-common.kong).
+# tpay has no KongConsumer (credentials managed elsewhere) — omit consumer block.
+kong:
+  plugins:
+    - name: tpay-key-auth
+      type: key-auth
+      config:
+        key_names: ["X-API-KEY"]
+        hide_credentials: true
+    - name: tpay-rate-limit
+      type: rate-limiting
+      config:
+        minute: 60
+        hour: 2000
+        policy: local
+        fault_tolerant: true
 
 cloud:
   provider: gke

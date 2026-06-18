@@ -37,6 +37,9 @@ migrate:
 cloudSqlProxy:
   enabled: false
 
+# Bulk env from 01-tech/.env; env: above overrides DATABASE_URL/ICORE_URL to in-cluster.
+localEnvConfigMap: 01tech-local-env
+
 externalSecret:
   enabled: false
 

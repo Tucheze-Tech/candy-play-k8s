@@ -1,0 +1,29 @@
+# Kong KIC serves TLS per ingress from a secret in the SAME namespace as that
+# ingress. The Grafana (monitoring) and Metabase (metabase) ingresses reference
+# candyplay-tls, so the cert must be issued into those namespaces too — the
+# candy-services Certificate (in clusterissuer.yaml) only covers app routes.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: candyplay-api-tls
+  namespace: monitoring
+spec:
+  secretName: candyplay-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - api.candyplay.co.ke
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: candyplay-api-tls
+  namespace: metabase
+spec:
+  secretName: candyplay-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - api.candyplay.co.ke

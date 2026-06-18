@@ -153,8 +153,8 @@ config:
 
 | Service | URL | Notes |
 |---------|-----|-------|
-| **Grafana** | https://api.candyplay.com/grafana | Default user: `admin`. Password: see bootstrap script output or run `kubectl get secret -n monitoring monitoring-grafana -o jsonpath='{.data.admin-password}' \| base64 -d` |
-| **Metabase** | https://api.candyplay.com/metabase | First launch runs setup wizard. Creates admin account. |
+| **Grafana** | https://api.candyplay.co.ke/grafana | Default user: `admin`. Password: see bootstrap script output or run `kubectl get secret -n monitoring monitoring-grafana -o jsonpath='{.data.admin-password}' \| base64 -d` |
+| **Metabase** | https://api.candyplay.co.ke/metabase | First launch runs setup wizard. Creates admin account. |
 | **Kong Admin API** | http://localhost:8001 (after port-forward) | Internal only. See port-forward command above. |
 | **Prometheus** | `kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090` → http://localhost:9090 | Use to debug metric queries before putting in Grafana |
 | **Loki** | Accessed via Grafana → Explore → select Loki datasource | Not exposed externally |

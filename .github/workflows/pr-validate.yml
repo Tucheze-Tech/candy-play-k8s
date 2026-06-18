@@ -13,7 +13,7 @@ on:
       - 'infrastructure/**'
 
 env:
-  GCP_PROJECT_ID: cm-services-prod
+  GCP_PROJECT_ID: candy-play
   GCP_REGION: europe-west3
   GKE_CLUSTER: candyplay-prod
 

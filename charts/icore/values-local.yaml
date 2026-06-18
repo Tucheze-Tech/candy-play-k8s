@@ -29,7 +29,7 @@ serviceAccount:
 env:
   SETTINGS_NAME: ""
   GOOGLE_CLOUD_PROJECT: ""
-  USE_CLOUD_SQL_AUTH_PROXY: "false"
+  USE_CLOUD_SQL_AUTH_PROXY: ""
   PORT: "8080"
   DATABASE_URL: "postgresql://candy:candy@postgres:5432/gonga_local"
   REDIS_HOST: "redis"
@@ -44,6 +44,10 @@ migrate:
 
 cloudSqlProxy:
   enabled: false
+
+# Bulk env from Icore/src/.env (Tilt builds this ConfigMap). The env: block above
+# overrides DATABASE_URL/REDIS_* to the in-cluster Postgres/Redis.
+localEnvConfigMap: icore-local-env
 
 externalSecret:
   enabled: false

@@ -27,8 +27,9 @@ serviceAccount:
 env:
   GOOGLE_CLOUD_PROJECT: ""
   PORT: "8080"
-  TPAY_ENV: "local"
+  TPAY_ENV: "staging"
   DATABASE_URL: "postgres://candy:candy@postgres:5432/tpay_local"
+  SERVICE_URL: ""  # empty → ALLOWED_HOSTS = ["*"] so k8s probe IPs aren't rejected
 
 # Tilt runs migrations separately.
 migrate:
@@ -37,6 +38,9 @@ migrate:
 
 cloudSqlProxy:
   enabled: false
+
+# Bulk env from tpay/app/.env; env: above overrides DATABASE_URL to in-cluster.
+localEnvConfigMap: tpay-local-env
 
 externalSecret:
   enabled: false

@@ -1,10 +1,19 @@
 replicaCount: 1
 
+# Staging lives in its own namespace + KSA inside the same GKE cluster.
+# Templates pin metadata.namespace to cloud.namespace, and WI binds
+# candy-services-staging/<svc>-ksa-stg, so both must be overridden here.
+cloud:
+  namespace: candy-services-staging
+
+serviceAccount:
+  name: tpay-ksa-stg
+
 image:
   tag: "staging-latest"
 
 env:
-  GOOGLE_CLOUD_PROJECT: "cm-services-prod"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
   PORT: "8080"
 
 autoscaling:
@@ -15,10 +24,25 @@ externalSecret:
   gcpSecretName: "tpay_stg_settings"
 
 ingress:
-  host: api-dev.candyplay.com
+  host: api-dev.candyplay.co.ke
   pathPrefix: "/tpay"
   tlsSecret: candyplay-dev-tls
   kongPlugins: "tpay-key-auth-stg,tpay-rate-limit-stg"
+
+# Staging Kong objects: -stg names + relaxed limits. Lists replace wholesale.
+kong:
+  plugins:
+    - name: tpay-key-auth-stg
+      type: key-auth
+      config:
+        key_names: ["X-API-KEY"]
+        hide_credentials: true
+    - name: tpay-rate-limit-stg
+      type: rate-limiting
+      config:
+        minute: 300
+        policy: local
+        fault_tolerant: true
 
 resources:
   requests:

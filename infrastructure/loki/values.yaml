@@ -25,16 +25,28 @@ loki:
     limits:
       cpu: "500m"
       memory: "512Mi"
-  nodeSelector:
-    cloud.google.com/gke-spot: "true"
-  tolerations:
-    - key: "cloud.google.com/gke-spot"
-      operator: Equal
-      value: "true"
-      effect: NoSchedule
+  # No Spot (PREEMPTIBLE_CPUS quota ~1 in europe-west3) — standard Autopilot nodes.
 
 promtail:
   enabled: true
+
+  # GKE Autopilot: write-mode hostPath is denied, and hostPath is only allowed
+  # under /var/log. Promtail's defaults mount /var/lib/docker/containers (wrong
+  # for containerd anyway) and a writable /run/promtail. Override: read pod logs
+  # from /var/log/pods (read-only) and keep the positions file in an emptyDir.
+  defaultVolumes:
+    - name: run
+      emptyDir: {}
+    - name: pods
+      hostPath:
+        path: /var/log/pods
+  defaultVolumeMounts:
+    - name: run
+      mountPath: /run/promtail
+    - name: pods
+      mountPath: /var/log/pods
+      readOnly: true
+
   config:
     logLevel: info
     serverPort: 3101

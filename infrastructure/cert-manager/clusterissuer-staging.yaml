@@ -1,5 +1,5 @@
 ---
-# Certificate for staging domain api-dev.candyplay.com
+# Certificate for staging domain api-dev.candyplay.co.ke
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -11,4 +11,4 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    - api-dev.candyplay.com
+    - api-dev.candyplay.co.ke

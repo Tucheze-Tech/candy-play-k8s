@@ -28,24 +28,67 @@ prometheus:
     serviceMonitorNamespaceSelector:
       matchLabels:
         monitoring: "true"
-    nodeSelector:
-      cloud.google.com/gke-spot: "true"
-    tolerations:
-      - key: "cloud.google.com/gke-spot"
-        operator: Equal
-        value: "true"
-        effect: NoSchedule
+    # No Spot: PREEMPTIBLE_CPUS quota is ~1 in europe-west3, so spot scale-up
+    # fails. Run on standard Autopilot nodes (CPUS quota has headroom).
 
 grafana:
   enabled: true
 
   # -------------------------------------------------------
+  # Backing store: Cloud SQL Postgres (grafana_prod) via cloud-sql-proxy.
+  # Workload Identity SA (grafana-sa) gives the proxy cloudsql.client.
+  # Password is synced from grafana_db_credentials by ESO -> grafana-db-secret.
+  # -------------------------------------------------------
+  serviceAccount:
+    create: true
+    name: grafana
+    annotations:
+      iam.gke.io/gcp-service-account: "grafana-sa@candy-play.iam.gserviceaccount.com"
+
+  env:
+    GF_DATABASE_TYPE: postgres
+    GF_DATABASE_HOST: "127.0.0.1:5432"
+    GF_DATABASE_NAME: grafana_prod
+    GF_DATABASE_USER: grafana_user
+    GF_DATABASE_SSL_MODE: disable   # traffic stays local to the proxy sidecar
+  envValueFrom:
+    GF_DATABASE_PASSWORD:
+      secretKeyRef:
+        name: grafana-db-secret
+        key: password
+
+  # cloud-sql-proxy sidecar — connects Grafana to Cloud SQL via private IP
+  extraContainers: |
+    - name: cloud-sql-proxy
+      image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+      args:
+        - "--structured-logs"
+        - "--port=5432"
+        - "--private-ip"
+        - "candy-play:europe-west3:candyplay-prod-pg"
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+  # -------------------------------------------------------
   # Grafana root URL — must match the Kong strip-path route
-  # Access: https://api.candyplay.com/grafana
+  # Access: https://api.candyplay.co.ke/grafana
   # -------------------------------------------------------
   grafana.ini:
     server:
-      root_url: "%(protocol)s://%(domain)s/grafana"
+      # Kong terminates TLS and forwards plain HTTP, so %(protocol)s resolves to
+      # http and Grafana would redirect HTTPS->http -> Cloudflare upgrades ->
+      # loop. Hardcode https + the real domain. Pairs with strip-path:false
+      # below so Grafana receives the /grafana prefix it serves under.
+      domain: api.candyplay.co.ke
+      root_url: "https://api.candyplay.co.ke/grafana"
       serve_from_sub_path: true
     security:
       allow_embedding: true    # needed for iframe embedding if used in metabase
@@ -108,31 +151,27 @@ grafana:
     limits:
       cpu: 200m
       memory: 256Mi
+  # State lives in Cloud SQL (grafana_prod), so no PVC. An RWO PVC + the default
+  # RollingUpdate also deadlocks (old pod holds the volume, new pod can't mount).
   persistence:
-    enabled: true
-    storageClassName: standard-rwo
-    size: 2Gi
+    enabled: false
   service:
     type: ClusterIP
   ingress:
     enabled: true
     ingressClassName: kong
     annotations:
-      konghq.com/strip-path: "true"
+      # serve_from_sub_path=true means Grafana expects the /grafana prefix, so
+      # Kong must NOT strip it (strip-path:true caused a 301 loop).
+      konghq.com/strip-path: "false"
     hosts:
-      - api.candyplay.com
+      - api.candyplay.co.ke
     path: /grafana
     tls:
       - secretName: candyplay-tls
         hosts:
-          - api.candyplay.com
-  nodeSelector:
-    cloud.google.com/gke-spot: "true"
-  tolerations:
-    - key: "cloud.google.com/gke-spot"
-      operator: Equal
-      value: "true"
-      effect: NoSchedule
+          - api.candyplay.co.ke
+  # No Spot (PREEMPTIBLE_CPUS quota ~1) — run on standard Autopilot nodes.
 
 alertmanager:
   enabled: false
@@ -142,6 +181,24 @@ nodeExporter:
 
 kubeStateMetrics:
   enabled: true
+
+# GKE Autopilot manages the control plane and blocks writes to kube-system, so
+# these scrape targets both fail (Service patch denied) AND aren't reachable.
+# Disable them — metrics for these components aren't available on Autopilot.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+coreDns:
+  enabled: false
+kubeDns:
+  enabled: false
+kubelet:
+  enabled: true   # kubelet/cAdvisor metrics ARE scrapeable on Autopilot
 
 defaultRules:
   create: true

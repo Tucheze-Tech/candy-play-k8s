@@ -20,7 +20,7 @@ on:
         default: ''
 
 env:
-  GCP_PROJECT_ID: cm-services-prod
+  GCP_PROJECT_ID: candy-play
   GCP_REGION: europe-west3
   GKE_CLUSTER: candyplay-prod
 
@@ -342,7 +342,7 @@ jobs:
           helm upgrade --install external-secrets external-secrets/external-secrets \
             --namespace external-secrets \
             --create-namespace \
-            --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="external-secrets-sa@cm-services-prod.iam.gserviceaccount.com" \
+            --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="external-secrets-sa@candy-play.iam.gserviceaccount.com" \
             --version 0.10.5 \
             --atomic \
             --timeout=10m \

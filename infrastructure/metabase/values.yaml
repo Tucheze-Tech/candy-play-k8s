@@ -11,41 +11,49 @@ database:
 resources:
   requests:
     cpu: 250m
-    memory: 512Mi
+    memory: 1Gi
   limits:
     cpu: 1000m
-    memory: 1Gi
+    memory: 2Gi
+
+# Metabase JVM takes 90-120s to boot; the default liveness probe killed it
+# mid-startup (SIGTERM/143 -> CrashLoop). Give it room before probing.
+livenessProbe:
+  initialDelaySeconds: 180
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 6
+readinessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 12
 
 service:
   type: ClusterIP
 
+# pmint93/metabase chart: hosts is a list of plain hostname STRINGS, with
+# path/pathType as separate keys (not the {host, paths:[...]} object form).
 ingress:
   enabled: true
   className: kong
   annotations:
     konghq.com/strip-path: "true"
   hosts:
-    - host: api.candyplay.com
-      paths:
-        - path: /metabase
-          pathType: Prefix
+    - api.candyplay.co.ke
+  path: /metabase
+  pathType: Prefix
   tls:
     - secretName: candyplay-tls
       hosts:
-        - api.candyplay.com
+        - api.candyplay.co.ke
 
-nodeSelector:
-  cloud.google.com/gke-spot: "true"
-tolerations:
-  - key: "cloud.google.com/gke-spot"
-    operator: "Equal"
-    value: "true"
-    effect: "NoSchedule"
+# No Spot (PREEMPTIBLE_CPUS quota ~1 in europe-west3) — standard Autopilot nodes.
 
 serviceAccount:
   create: true
   annotations:
-    iam.gke.io/gcp-service-account: "metabase-sa@cm-services-prod.iam.gserviceaccount.com"
+    iam.gke.io/gcp-service-account: "metabase-sa@candy-play.iam.gserviceaccount.com"
 
 extraEnv:
   - name: MB_DB_PASS
@@ -55,7 +63,7 @@ extraEnv:
         key: password
   # Required for subpath routing — without this Metabase redirects to / and breaks
   - name: MB_SITE_URL
-    value: "https://api.candyplay.com/metabase"
+    value: "https://api.candyplay.co.ke/metabase"
 
 # cloud-sql-proxy sidecar — connects Metabase to Cloud SQL via private IP
 extraContainers:
@@ -65,7 +73,7 @@ extraContainers:
       - "--structured-logs"
       - "--port=5432"
       - "--private-ip"
-      - "cm-services-prod:europe-west3:candyplay-prod-pg"
+      - "candy-play:europe-west3:candyplay-prod-pg"
     securityContext:
       runAsNonRoot: true
       allowPrivilegeEscalation: false

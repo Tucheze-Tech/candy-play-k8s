@@ -56,16 +56,24 @@ spec:
           {{- with .Values.env }}
           env:
             {{- range $k, $v := . }}
-            {{- if $v }}
+            {{- if not (kindIs "invalid" $v) }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
             {{- end }}
           {{- end }}
-          {{- if ne (toString .Values.externalSecret.enabled) "false" }}
+          {{- if or (ne (toString .Values.externalSecret.enabled) "false") .Values.localEnvConfigMap }}
           envFrom:
+            {{- if ne (toString .Values.externalSecret.enabled) "false" }}
             - secretRef:
                 name: {{ .Values.externalSecret.targetName }}
+            {{- end }}
+            {{- if .Values.localEnvConfigMap }}
+            # Local only: bulk env from the service's .env (ConfigMap built by Tilt).
+            # The explicit `env:` above overrides any DB/Redis keys to in-cluster values.
+            - configMapRef:
+                name: {{ .Values.localEnvConfigMap }}
+            {{- end }}
           {{- end }}
           {{- with .Values.probes.liveness }}
           livenessProbe:

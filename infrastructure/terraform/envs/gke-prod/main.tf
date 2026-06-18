@@ -9,7 +9,7 @@ module "cluster" {
 
 variable "project_id" {
   type    = string
-  default = "cm-services-prod"
+  default = "candy-play"
 }
 
 output "cluster_name" {

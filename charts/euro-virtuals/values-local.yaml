@@ -40,6 +40,9 @@ migrate:
 cloudSqlProxy:
   enabled: false
 
+# Bulk env from euro-virtuals/.env; env: above overrides POSTGRES_* to in-cluster.
+localEnvConfigMap: ev-local-env
+
 externalSecret:
   enabled: false
 

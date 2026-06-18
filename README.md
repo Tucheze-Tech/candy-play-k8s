@@ -14,7 +14,7 @@ api.candyplay.com → GCP LB → Kong Ingress Controller
   /metabase/*→ Metabase BI
 ```
 
-**Diagram:** [shareable Excalidraw](https://excalidraw.com/#json=reynMWwUgs9v8fDbH6R9_,A0G3ciXgooZdAIoOAkuY_Q) · source at `docs/architecture.excalidraw` (open at excalidraw.com → Hamburger → Open).
+**Diagram:** [shareable Excalidraw](https://excalidraw.com/#json=No__thqydks5aaPGgzg2v,1hvX7OqUO_a9wAhLVuS-Dg) · source at `docs/architecture.excalidraw` (open at excalidraw.com → Hamburger → Open).
 
 ## Portability model (GKE ↔ EKS)
 

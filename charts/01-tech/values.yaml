@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: europe-west3-docker.pkg.dev/cm-services-prod/cloud-run-source-deploy/01-tech
+  repository: europe-west3-docker.pkg.dev/candy-play/cloud-run-source-deploy/01-tech
   tag: "latest"
   pullPolicy: IfNotPresent
 
@@ -25,10 +25,10 @@ autoscaling:
 
 serviceAccount:
   name: 01tech-ksa
-  gcpServiceAccount: "01tech-sa@cm-services-prod.iam.gserviceaccount.com"
+  gcpServiceAccount: "tech01-sa@candy-play.iam.gserviceaccount.com"
 
 env:
-  GOOGLE_CLOUD_PROJECT: "cm-services-prod"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
   PORT: "8080"
 
 probes:
@@ -53,7 +53,7 @@ migrate:
 
 cloudSqlProxy:
   enabled: true
-  connectionName: "cm-services-prod:europe-west3:candyplay-prod-pg"
+  connectionName: "candy-play:europe-west3:candyplay-prod-pg"
   image: "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0"
   resources:
     requests:
@@ -74,18 +74,39 @@ networkPolicy:
 
 ingress:
   enabled: true
-  host: api.candyplay.com
+  host: api.candyplay.co.ke
   pathPrefix: "/01tech"
   tlsSecret: candyplay-tls
-  kongPlugins: "01tech-key-auth,01tech-rate-limit"
+  kongPlugins: "01tech-key-auth,01tech-rate-limit"   # must match kong.plugins[].name below
 
 # Separate ingress for external callback routes (IP-restricted, no key-auth)
 callbackIngress:
   enabled: true
   pathPrefix: "/01tech/v2"
-  kongPlugins: "01tech-ip-restrict,01tech-rate-limit"
-  allowedCidrs:
-    - "0.0.0.0/0"  # replace with actual 01Tech provider CIDRs
+  kongPlugins: "01tech-ip-restrict,01tech-rate-limit"   # must match kong.plugins[].name below
+
+# Kong objects (single source of truth — rendered by candy-common.kong).
+# 01-tech has no KongConsumer. The ip-restriction plugin guards the callback
+# route; set its allow list to the real 01Tech provider CIDRs per env.
+kong:
+  plugins:
+    - name: 01tech-key-auth
+      type: key-auth
+      config:
+        key_names: ["X-API-KEY"]
+        hide_credentials: true
+    - name: 01tech-rate-limit
+      type: rate-limiting
+      config:
+        minute: 300
+        hour: 10000
+        policy: local
+        fault_tolerant: true
+    - name: 01tech-ip-restrict
+      type: ip-restriction
+      config:
+        allow:
+          - "0.0.0.0/0"   # replace with actual 01Tech provider CIDRs
 
 cloud:
   provider: gke

@@ -9,9 +9,17 @@ spec:
     privateKeySecretRef:
       name: letsencrypt-prod-key
     solvers:
-      - http01:
-          ingress:
-            ingressClassName: kong
+      # DNS-01 via Cloudflare — works even with the candyplay.co.ke records
+      # proxied (orange cloud). Token Secret lives in the cert-manager namespace
+      # (ClusterIssuer reads solver secrets from --cluster-resource-namespace).
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: token
+        selector:
+          dnsZones:
+            - candyplay.co.ke
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -24,4 +32,4 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    - api.candyplay.com
+    - api.candyplay.co.ke

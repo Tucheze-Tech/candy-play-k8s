@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: europe-west3-docker.pkg.dev/cm-services-prod/cloud-run-source-deploy/euro-virtuals
+  repository: europe-west3-docker.pkg.dev/candy-play/cloud-run-source-deploy/euro-virtuals
   tag: "latest"
   pullPolicy: IfNotPresent
 
@@ -25,10 +25,10 @@ autoscaling:
 
 serviceAccount:
   name: ev-ksa
-  gcpServiceAccount: "ev-sa@cm-services-prod.iam.gserviceaccount.com"
+  gcpServiceAccount: "euro-virtuals-sa@candy-play.iam.gserviceaccount.com"
 
 env:
-  GOOGLE_CLOUD_PROJECT: "cm-services-prod"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
   PORT: "8080"
 
 probes:
@@ -53,7 +53,7 @@ migrate:
 
 cloudSqlProxy:
   enabled: true
-  connectionName: "cm-services-prod:europe-west3:candyplay-prod-pg"
+  connectionName: "candy-play:europe-west3:candyplay-prod-pg"
   image: "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0"
   resources:
     requests:
@@ -74,10 +74,33 @@ networkPolicy:
 
 ingress:
   enabled: true
-  host: api.candyplay.com
+  host: api.candyplay.co.ke
   pathPrefix: "/ev"
   tlsSecret: candyplay-tls
-  kongPlugins: "ev-key-auth,ev-rate-limit"
+  kongPlugins: "ev-key-auth,ev-rate-limit"   # must match kong.plugins[].name below
+
+# Kong objects (single source of truth — rendered by candy-common.kong).
+kong:
+  plugins:
+    - name: ev-key-auth
+      type: key-auth
+      config:
+        key_names: ["X-API-KEY"]
+        hide_credentials: true
+    - name: ev-rate-limit
+      type: rate-limiting
+      config:
+        minute: 120
+        hour: 5000
+        policy: local
+        fault_tolerant: true
+        hide_client_headers: false
+  consumer:
+    name: ev-internal
+    credentialSecret: ev-apikey-credential
+    # Empty = chart does NOT create the Secret (legacy out-of-band flow).
+    # Supply at deploy: --set kong.consumer.apiKey=$(gcloud secrets versions access ...)
+    apiKey: ""
 
 cloud:
   provider: gke

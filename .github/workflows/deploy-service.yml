@@ -42,7 +42,7 @@ on:
         type: string
 
 env:
-  GCP_PROJECT_ID: cm-services-prod
+  GCP_PROJECT_ID: candy-play
   GCP_REGION: europe-west3
   GKE_CLUSTER: candyplay-prod
 
@@ -124,7 +124,6 @@ jobs:
             --values "${{ steps.params.outputs.cloud_values }}" \
             --values "charts/${SVC}/values-${{ inputs.environment }}.yaml" \
             --set image.tag='${{ inputs.image_tag }}' \
-            --set serviceAccount.name="${SVC%-*}-ksa${{ steps.params.outputs.sa_suffix }}" \
             $REPO_FLAG \
             --atomic \
             --timeout=10m \

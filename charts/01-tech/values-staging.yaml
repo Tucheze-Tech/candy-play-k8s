@@ -1,10 +1,19 @@
 replicaCount: 1
 
+# Staging lives in its own namespace + KSA inside the same GKE cluster.
+# Templates pin metadata.namespace to cloud.namespace, and WI binds
+# candy-services-staging/<svc>-ksa-stg, so both must be overridden here.
+cloud:
+  namespace: candy-services-staging
+
+serviceAccount:
+  name: 01tech-ksa-stg
+
 image:
   tag: "staging-latest"
 
 env:
-  GOOGLE_CLOUD_PROJECT: "cm-services-prod"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
   PORT: "8080"
 
 autoscaling:
@@ -15,7 +24,7 @@ externalSecret:
   gcpSecretName: "01tech_stg_settings"
 
 ingress:
-  host: api-dev.candyplay.com
+  host: api-dev.candyplay.co.ke
   pathPrefix: "/01tech"
   tlsSecret: candyplay-dev-tls
   kongPlugins: "01tech-key-auth-stg,01tech-rate-limit-stg"
@@ -24,8 +33,26 @@ callbackIngress:
   enabled: true
   pathPrefix: "/01tech/v2"
   kongPlugins: "01tech-ip-restrict-stg,01tech-rate-limit-stg"
-  allowedCidrs:
-    - "0.0.0.0/0"
+
+# Staging Kong objects: -stg names + relaxed limits. Lists replace wholesale.
+kong:
+  plugins:
+    - name: 01tech-key-auth-stg
+      type: key-auth
+      config:
+        key_names: ["X-API-KEY"]
+        hide_credentials: true
+    - name: 01tech-rate-limit-stg
+      type: rate-limiting
+      config:
+        minute: 300
+        policy: local
+        fault_tolerant: true
+    - name: 01tech-ip-restrict-stg
+      type: ip-restriction
+      config:
+        allow:
+          - "0.0.0.0/0"   # open for staging; tighten to provider CIDRs
 
 resources:
   requests:

@@ -13,12 +13,16 @@ proxy:
     enabled: true
 
 # ---------------------------------------------------------
-# Kong DB — PostgreSQL via Cloud SQL Auth Proxy sidecar
-# Database: kong_prod on candyplay-prod-pg
+# Kong DB — PostgreSQL on candyplay-prod-pg via Cloud SQL PRIVATE IP.
+# Direct (no cloud-sql-proxy): the proxy sidecar only lands in the main
+# Deployment, NOT the migration Jobs, so 127.0.0.1 fails in migrations. Pods
+# reach the private IP over the VPC (PSA peering from 02). SSL optional
+# (instance is ALLOW_UNENCRYPTED_AND_ENCRYPTED). Private IP is stable for the
+# instance's lifetime.
 # ---------------------------------------------------------
 env:
   database: "postgres"
-  pg_host: "127.0.0.1"        # cloud-sql-proxy sidecar
+  pg_host: "10.79.0.3"        # candyplay-prod-pg private IP
   pg_port: "5432"
   pg_database: "kong_prod"
   pg_user: "kong_user"
@@ -59,28 +63,9 @@ migrations:
   preUpgrade: true
   postUpgrade: true
 
-# ---------------------------------------------------------
-# Cloud SQL Auth Proxy sidecar — connects Kong to kong_prod DB
-# ---------------------------------------------------------
-deployment:
-  sidecarContainers:
-    - name: cloud-sql-proxy
-      image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
-      args:
-        - "--structured-logs"
-        - "--port=5432"
-        - "--private-ip"
-        - "cm-services-prod:europe-west3:candyplay-prod-pg"
-      securityContext:
-        runAsNonRoot: true
-        allowPrivilegeEscalation: false
-      resources:
-        requests:
-          cpu: "50m"
-          memory: "64Mi"
-        limits:
-          cpu: "100m"
-          memory: "128Mi"
+# No cloud-sql-proxy sidecar — Kong connects to the Cloud SQL private IP
+# directly (see pg_host above), so migration Jobs and the Deployment use the
+# same path. Workload Identity / proxy not needed for Kong's own DB.
 
 resources:
   requests:

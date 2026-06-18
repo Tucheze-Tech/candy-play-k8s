@@ -23,6 +23,28 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+      {{- if .Values.cloudSqlProxy.enabled }}
+      # Native sidecar (initContainer + restartPolicy: Always): the proxy starts
+      # before migrate, stays up during it, and is auto-terminated when migrate
+      # exits so the Job actually COMPLETES. A plain sidecar container would run
+      # forever and the Job would never finish.
+      initContainers:
+        - name: cloud-sql-proxy
+          image: {{ .Values.cloudSqlProxy.image }}
+          restartPolicy: Always
+          args:
+            - "--structured-logs"
+            - "--port=5432"
+            - "--private-ip"
+            - "{{ .Values.cloudSqlProxy.connectionName }}"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+      {{- end }}
       containers:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -41,21 +63,5 @@ spec:
             - secretRef:
                 name: {{ .Values.externalSecret.targetName }}
           {{- end }}
-        {{- if .Values.cloudSqlProxy.enabled }}
-        - name: cloud-sql-proxy
-          image: {{ .Values.cloudSqlProxy.image }}
-          args:
-            - "--structured-logs"
-            - "--port=5432"
-            - "--private-ip"
-            - "{{ .Values.cloudSqlProxy.connectionName }}"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-          resources:
-            requests:
-              cpu: "50m"
-              memory: "64Mi"
-        {{- end }}
 {{- end }}
 {{- end }}
