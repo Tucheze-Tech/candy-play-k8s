@@ -1,0 +1,78 @@
+image:
+  tag: "v0.51.4"
+
+database:
+  type: postgres
+  host: "127.0.0.1"
+  port: 5432
+  dbname: metabase_prod
+  username: metabase_user
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: kong
+  annotations:
+    konghq.com/strip-path: "true"
+  hosts:
+    - host: api.candyplay.com
+      paths:
+        - path: /metabase
+          pathType: Prefix
+  tls:
+    - secretName: candyplay-tls
+      hosts:
+        - api.candyplay.com
+
+nodeSelector:
+  cloud.google.com/gke-spot: "true"
+tolerations:
+  - key: "cloud.google.com/gke-spot"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: "metabase-sa@candy-play.iam.gserviceaccount.com"
+
+extraEnv:
+  - name: MB_DB_PASS
+    valueFrom:
+      secretKeyRef:
+        name: metabase-db-secret
+        key: password
+  # Required for subpath routing — without this Metabase redirects to / and breaks
+  - name: MB_SITE_URL
+    value: "https://api.candyplay.com/metabase"
+
+# cloud-sql-proxy sidecar — connects Metabase to Cloud SQL via private IP
+extraContainers:
+  - name: cloud-sql-proxy
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+    args:
+      - "--structured-logs"
+      - "--port=5432"
+      - "--private-ip"
+      - "candy-play:europe-west3:candyplay-prod-pg"
+    securityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

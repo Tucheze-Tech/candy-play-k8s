@@ -1,0 +1,6 @@
+apiVersion: v2
+name: icore
+description: Icore Django 5.2 + FastAPI core platform
+type: application
+version: 0.1.0
+appVersion: "latest"

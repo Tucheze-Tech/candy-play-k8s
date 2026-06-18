@@ -1,0 +1,6 @@
+apiVersion: v2
+name: euro-virtuals
+description: Euro Virtuals FastAPI game aggregator
+type: application
+version: 0.1.0
+appVersion: "latest"

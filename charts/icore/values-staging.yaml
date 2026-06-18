@@ -1,0 +1,31 @@
+replicaCount: 1
+
+image:
+  tag: "staging-latest"
+
+env:
+  SETTINGS_NAME: "gonga_stg_settings"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
+  USE_CLOUD_SQL_AUTH_PROXY: "true"
+  PORT: "8080"
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 2
+
+externalSecret:
+  gcpSecretName: "gonga_stg_settings"
+
+ingress:
+  host: api-dev.candyplay.com
+  pathPrefix: "/icore"
+  tlsSecret: candyplay-dev-tls
+  kongPlugins: "icore-key-auth-stg,icore-rate-limit-stg"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"

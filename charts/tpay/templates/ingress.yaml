@@ -1,0 +1,27 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "tpay.fullname" . }}-ingress
+  namespace: candy-services
+  annotations:
+    konghq.com/strip-path: "true"
+    konghq.com/plugins: {{ .Values.ingress.kongPlugins | quote }}
+spec:
+  ingressClassName: kong
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tlsSecret }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.pathPrefix }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "tpay.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

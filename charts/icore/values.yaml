@@ -1,0 +1,61 @@
+replicaCount: 2
+
+image:
+  repository: europe-west3-docker.pkg.dev/candy-play/cloud-run-source-deploy/icore
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+serviceAccount:
+  name: icore-ksa
+  gcpServiceAccount: "icore-sa@candy-play.iam.gserviceaccount.com"
+
+env:
+  SETTINGS_NAME: "gonga_prd_settings"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
+  USE_CLOUD_SQL_AUTH_PROXY: "true"
+  PORT: "8080"
+
+cloudSqlProxy:
+  enabled: true
+  connectionName: "candy-play:europe-west3:candyplay-prod-pg"
+  image: "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+
+externalSecret:
+  secretStoreName: "gcp-secret-store"
+  refreshInterval: "1h"
+  gcpSecretName: "gonga_prd_settings"
+
+networkPolicy:
+  enabled: true
+
+ingress:
+  enabled: true
+  host: api.candyplay.com
+  pathPrefix: "/icore"
+  tlsSecret: candyplay-tls
+  kongPlugins: "icore-key-auth,icore-rate-limit"

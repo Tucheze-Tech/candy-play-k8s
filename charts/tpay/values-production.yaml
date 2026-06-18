@@ -1,0 +1,8 @@
+replicaCount: 1
+
+image:
+  tag: "production"
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 4

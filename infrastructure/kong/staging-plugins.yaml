@@ -1,0 +1,100 @@
+# Staging Kong plugins — scoped to candy-services-staging namespace
+# Separate plugin objects from prod so rate limits / keys are independent
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: icore-key-auth-stg
+  namespace: candy-services-staging
+plugin: key-auth
+config:
+  key_names:
+    - X-API-KEY
+  hide_credentials: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: icore-rate-limit-stg
+  namespace: candy-services-staging
+plugin: rate-limiting
+config:
+  minute: 300       # relaxed for staging
+  policy: local
+  fault_tolerant: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: ev-key-auth-stg
+  namespace: candy-services-staging
+plugin: key-auth
+config:
+  key_names:
+    - X-API-KEY
+  hide_credentials: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: ev-rate-limit-stg
+  namespace: candy-services-staging
+plugin: rate-limiting
+config:
+  minute: 300
+  policy: local
+  fault_tolerant: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: tpay-key-auth-stg
+  namespace: candy-services-staging
+plugin: key-auth
+config:
+  key_names:
+    - X-API-KEY
+  hide_credentials: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: tpay-rate-limit-stg
+  namespace: candy-services-staging
+plugin: rate-limiting
+config:
+  minute: 300
+  policy: local
+  fault_tolerant: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: 01tech-key-auth-stg
+  namespace: candy-services-staging
+plugin: key-auth
+config:
+  key_names:
+    - X-API-KEY
+  hide_credentials: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: 01tech-rate-limit-stg
+  namespace: candy-services-staging
+plugin: rate-limiting
+config:
+  minute: 300
+  policy: local
+  fault_tolerant: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: 01tech-ip-restrict-stg
+  namespace: candy-services-staging
+plugin: ip-restriction
+config:
+  allow:
+    - "0.0.0.0/0"   # open for staging; tighten per-environment in values-staging.yaml

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: gamble-hub
+description: Gamble Hub Go microservice — wallet callbacks and game launch URLs
+type: application
+version: 0.1.0
+appVersion: "latest"

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: 01-tech
+description: 01-Tech Go game launcher aggregator
+type: application
+version: 0.1.0
+appVersion: "latest"

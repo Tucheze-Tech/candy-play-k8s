@@ -1,0 +1,22 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: tpay-key-auth
+  namespace: candy-services
+plugin: key-auth
+config:
+  key_names:
+    - X-API-KEY
+  hide_credentials: true
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: tpay-rate-limit
+  namespace: candy-services
+plugin: rate-limiting
+config:
+  minute: 60
+  hour: 2000
+  policy: local
+  fault_tolerant: true

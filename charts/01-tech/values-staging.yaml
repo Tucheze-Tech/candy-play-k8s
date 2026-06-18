@@ -1,0 +1,36 @@
+replicaCount: 1
+
+image:
+  tag: "staging-latest"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "candy-play"
+  PORT: "8080"
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 2
+
+externalSecret:
+  gcpSecretName: "01tech_stg_settings"
+
+ingress:
+  host: api-dev.candyplay.com
+  pathPrefix: "/01tech"
+  tlsSecret: candyplay-dev-tls
+  kongPlugins: "01tech-key-auth-stg,01tech-rate-limit-stg"
+
+callbackIngress:
+  enabled: true
+  pathPrefix: "/01tech/v2"
+  kongPlugins: "01tech-ip-restrict-stg,01tech-rate-limit-stg"
+  allowedCidrs:
+    - "0.0.0.0/0"
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "128Mi"
+  limits:
+    cpu: "300m"
+    memory: "256Mi"

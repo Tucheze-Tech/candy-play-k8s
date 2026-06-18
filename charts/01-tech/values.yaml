@@ -1,0 +1,67 @@
+replicaCount: 1
+
+image:
+  repository: europe-west3-docker.pkg.dev/candy-play/cloud-run-source-deploy/01-tech
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+
+serviceAccount:
+  name: 01tech-ksa
+  gcpServiceAccount: "tech01-sa@candy-play.iam.gserviceaccount.com"
+
+env:
+  GOOGLE_CLOUD_PROJECT: "candy-play"
+  PORT: "8080"
+
+cloudSqlProxy:
+  enabled: true
+  connectionName: "candy-play:europe-west3:candyplay-prod-pg"
+  image: "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+
+externalSecret:
+  secretStoreName: "gcp-secret-store"
+  refreshInterval: "1h"
+  gcpSecretName: "01tech_prd_settings"
+
+networkPolicy:
+  enabled: true
+
+ingress:
+  enabled: true
+  host: api.candyplay.com
+  pathPrefix: "/01tech"
+  tlsSecret: candyplay-tls
+  kongPlugins: "01tech-key-auth,01tech-rate-limit"
+
+# Separate ingress for external callback routes (IP-restricted, no key-auth)
+callbackIngress:
+  enabled: true
+  pathPrefix: "/01tech/v2"
+  kongPlugins: "01tech-ip-restrict,01tech-rate-limit"
+  allowedCidrs:
+    - "0.0.0.0/0"  # replace with actual 01Tech provider CIDRs

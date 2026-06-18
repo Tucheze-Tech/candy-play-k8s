@@ -1,0 +1,13 @@
+replicaCount: 1
+
+image:
+  tag: "production"
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 4
+
+callbackIngress:
+  allowedCidrs:
+    - "185.170.165.0/24"  # 01Tech provider CIDRs — confirm with 01Tech
+    - "10.0.0.0/8"

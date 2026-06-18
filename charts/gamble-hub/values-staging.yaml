@@ -1,0 +1,12 @@
+replicaCount: 1
+
+env:
+  SETTINGS_NAME: "gamble_hub_stg_settings"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
+
+ingress:
+  host: api-dev.candyplay.com
+  tlsSecret: candyplay-dev-tls
+
+externalSecret:
+  gcpSecretName: "gamble_hub_stg_settings"
