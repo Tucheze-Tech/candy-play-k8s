@@ -3,6 +3,7 @@ cloud:
 
 serviceAccount:
   name: icore-ksa-stg
+  create: false
 
 image:
   tag: "staging-latest"
