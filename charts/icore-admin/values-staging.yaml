@@ -1,0 +1,22 @@
+cloud:
+  namespace: candy-services-staging
+
+serviceAccount:
+  name: icore-ksa-stg
+
+image:
+  tag: "staging-latest"
+
+env:
+  SETTINGS_NAME: "gonga_stg_settings"
+  GOOGLE_CLOUD_PROJECT: "candy-play"
+  USE_CLOUD_SQL_AUTH_PROXY: "true"
+  PORT: "8080"
+
+externalSecret:
+  gcpSecretName: "gonga_stg_settings"
+  targetName: "icore-admin-env-secret"
+
+ingress:
+  host: admin-dev.candyplay.co.ke
+  tlsSecret: candyplay-dev-tls

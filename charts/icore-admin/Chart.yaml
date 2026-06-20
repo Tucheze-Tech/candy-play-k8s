@@ -1,0 +1,10 @@
+apiVersion: v2
+name: icore-admin
+description: Icore Django admin panel
+type: application
+version: 0.1.0
+appVersion: "latest"
+dependencies:
+  - name: candy-common
+    version: "0.1.0"
+    repository: "file://../candy-common"
