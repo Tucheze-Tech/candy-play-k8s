@@ -22,6 +22,10 @@ autoscaling:
   minReplicas: 1
   maxReplicas: 2
 
+migrate:
+  enabled: true
+  command: ["sh", "-c", "python manage.py migrate --fake-initial --noinput && python manage.py seed"]
+
 externalSecret:
   gcpSecretName: "gonga_stg_settings"
 
