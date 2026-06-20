@@ -71,8 +71,8 @@ networkPolicy:
 
 ingress:
   enabled: true
-  host: admin.candyplay.co.ke
-  pathPrefix: "/"
+  host: api.candyplay.co.ke
+  pathPrefix: "/icore-admin"
   tlsSecret: candyplay-tls
   kongPlugins: ""
 

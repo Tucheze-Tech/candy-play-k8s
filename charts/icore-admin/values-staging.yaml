@@ -18,5 +18,6 @@ externalSecret:
   targetName: "icore-admin-env-secret"
 
 ingress:
-  host: admin-dev.candyplay.co.ke
+  host: api-dev.candyplay.co.ke
+  pathPrefix: "/icore-admin"
   tlsSecret: candyplay-dev-tls
